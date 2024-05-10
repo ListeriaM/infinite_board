@@ -1,8 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const math = @import("math.zig");
-
 fn ptrFromAny(comptime T: type, ptr: *anyopaque) *T {
     return @ptrCast(@alignCast(ptr));
 }
@@ -71,8 +69,8 @@ pub fn Grid(comptime Data: type, w: usize, h: usize) type {
         }
 
         pub fn find(self: *Self, allocator: Allocator, x: i32, y: i32, comptime create: bool) if (create) Allocator.Error!*Self else ?*Self {
-            const diffX = math.divFloor(x, Width);
-            const diffY = math.divFloor(y, Height);
+            const diffX = @divFloor(x, Width);
+            const diffY = @divFloor(y, Height);
 
             if (diffX == 0 and diffY == 0)
                 return self;
@@ -97,8 +95,8 @@ pub fn Grid(comptime Data: type, w: usize, h: usize) type {
             else
                 (self.parent.?.find(allocator, parentX, parentY, create) orelse return null);
 
-            const row = math.mod(parentY, Height);
-            const col = math.mod(parentX, Width);
+            const row: usize = @intCast(@mod(parentY, Height));
+            const col: usize = @intCast(@mod(parentX, Width));
 
             return if (create)
                 try nextGen.atOrCreateItem(allocator, .grid, row, col)

@@ -3,7 +3,6 @@ const root = @import("root");
 const Allocator = std.mem.Allocator;
 
 const ioctl = @import("ioctl.zig");
-const math = @import("math.zig");
 const grid = @import("grid.zig");
 
 const clear = root.CSI ++ "2J";
@@ -40,8 +39,8 @@ pub fn Board(w: usize, h: usize) type {
         }
 
         pub fn find(self: *Self, allocator: Allocator, x: i32, y: i32, comptime create: bool) if (create) Allocator.Error!*Self else ?*Self {
-            const diffX = math.divFloor(x, Width);
-            const diffY = math.divFloor(y, Height);
+            const diffX = @divFloor(x, Width);
+            const diffY = @divFloor(y, Height);
 
             if (diffX == 0 and diffY == 0)
                 return self;
@@ -54,8 +53,8 @@ pub fn Board(w: usize, h: usize) type {
             else
                 (self.parent.find(allocator, parentX, parentY, create) orelse return null);
 
-            const row = math.mod(parentY, Grid.Height);
-            const col = math.mod(parentX, Grid.Width);
+            const row: usize = @intCast(@mod(parentY, Grid.Height));
+            const col: BitIndex = @intCast(@mod(parentX, Grid.Width));
 
             return if (create)
                 nextGen.atOrCreate(allocator, row, col)
@@ -129,28 +128,28 @@ pub fn State(comptime Writer: type) type {
 
         pub fn up(self: *Self) !void {
             self.board = try self.board.find(self.allocator, self.x, self.y - 1, true);
-            self.y = math.mod(self.y - 1, Board64.Height);
+            self.y = @mod(self.y - 1, Board64.Height);
             try self.scrollDown(1);
             return self.flip();
         }
 
         pub fn down(self: *Self) !void {
             self.board = try self.board.find(self.allocator, self.x, self.y + 1, true);
-            self.y = math.mod(self.y + 1, Board64.Height);
+            self.y = @mod(self.y + 1, Board64.Height);
             try self.scrollUp(1);
             return self.flip();
         }
 
         pub fn left(self: *Self) !void {
             self.board = try self.board.find(self.allocator, self.x - 1, self.y, true);
-            self.x = math.mod(self.x - 1, Board64.Width);
+            self.x = @mod(self.x - 1, Board64.Width);
             self.board.flip(@intCast(self.y), @intCast(self.x));
             return self.redraw();
         }
 
         pub fn right(self: *Self) !void {
             self.board = try self.board.find(self.allocator, self.x + 1, self.y, true);
-            self.x = math.mod(self.x + 1, Board64.Width);
+            self.x = @mod(self.x + 1, Board64.Width);
             self.board.flip(@intCast(self.y), @intCast(self.x));
             return self.redraw();
         }
@@ -218,18 +217,18 @@ pub fn State(comptime Writer: type) type {
         }
 
         fn drawRow(self: Self, y: i32, fromX: i32, toX: i32, lastHalf: bool) !void {
-            const row = math.mod(y, Board64.Height);
+            const row: usize = @intCast(@mod(y, Board64.Height));
             var x = fromX;
             while (x < toX) : (x += 1) {
                 const icon = if (self.board.find(self.allocator, x, y, false)) |board| blk: {
-                    const col = math.mod(x, Board64.Width);
+                    const col: Board64.BitIndex = @intCast(@mod(x, Board64.Width));
                     break :blk if (board.at(row, col)) block else erase;
                 } else erase;
                 try self.writer.writeAll(icon);
             }
             if (lastHalf) {
                 if (self.board.find(self.allocator, toX, y, false)) |board| {
-                    const col = math.mod(toX, Board64.Width);
+                    const col: Board64.BitIndex = @intCast(@mod(toX, Board64.Width));
                     if (board.at(row, col))
                         return self.writer.writeAll(halfBlock);
                 }
