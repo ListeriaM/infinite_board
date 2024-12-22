@@ -87,10 +87,8 @@ pub fn main() !void {
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-
-    const allocator = arena.allocator();
+    // NOTE: we're using termkey, so we use the C allocator
+    const allocator = std.heap.c_allocator;
 
     var sa: std.posix.Sigaction = .{
         .mask = std.posix.empty_sigset,
@@ -105,7 +103,7 @@ pub fn main() !void {
     try std.posix.sigaction(std.posix.SIG.WINCH, &sa, null);
 
     var state = try board.state(allocator, stdout);
-    // defer state.deinit();
+    defer state.deinit();
 
     try stdout.writeAll(hideCur);
     defer {

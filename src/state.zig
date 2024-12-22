@@ -11,17 +11,13 @@ const halfBlock = "\u{2588}";
 const block = "\u{2588}\u{2589}";
 const erase = "  ";
 
-fn Uint(comptime size: usize) type {
-    return std.meta.Int(.unsigned, size);
-}
-
 const Grid = grid.Grid(Board);
 
 pub const Board = struct {
     pub const Width = 64;
     pub const Height = 64;
     pub const BitIndex = std.math.Log2Int(Bits);
-    const Bits = Uint(Width);
+    const Bits = std.meta.Int(.unsigned, Width);
 
     bits: [Height]Bits,
     row: u32,
@@ -97,10 +93,15 @@ pub fn State(comptime Writer: type) type {
         h: u16,
         writer: Writer,
         allocator: Allocator,
+        arena: std.heap.ArenaAllocator,
 
-        pub fn init(allocator: Allocator, width: u16, height: u16, writer: Writer) !Self {
+        pub fn init(child_allocator: Allocator, width: u16, height: u16, writer: Writer) !Self {
+            var arena = std.heap.ArenaAllocator.init(child_allocator);
+            errdefer arena.deinit();
+
+            const allocator = arena.allocator();
+
             const parent = try allocator.create(Grid);
-            errdefer allocator.destroy(parent);
             const board = try allocator.create(Board);
 
             parent.* = Grid.initParent(.{ .child = board });
@@ -114,11 +115,12 @@ pub fn State(comptime Writer: type) type {
                 .h = height,
                 .writer = writer,
                 .allocator = allocator,
+                .arena = arena,
             };
         }
 
         pub fn deinit(self: Self) void {
-            self.board.deinit(self.allocator);
+            self.arena.deinit();
         }
 
         pub fn up(self: *Self) !void {
