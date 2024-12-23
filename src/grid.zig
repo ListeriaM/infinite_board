@@ -3,41 +3,44 @@ const Allocator = std.mem.Allocator;
 
 const math = @import("math.zig");
 
-pub fn Grid(comptime Data: type) type {
+fn ptrFromAny(comptime T: type, ptr: *anyopaque) *T {
+    return @ptrCast(@alignCast(ptr));
+}
+
+fn ptrFromAnyOpt(comptime T: type, ptr: ?*anyopaque) ?*T {
+    return @ptrCast(@alignCast(ptr));
+}
+
+pub fn Grid(comptime Data: type, w: usize, h: usize) type {
     return struct {
         const Self = @This();
 
-        pub const Width = 16;
-        pub const Height = 16;
+        pub const Width: comptime_int = w;
+        pub const Height: comptime_int = h;
 
         const ItemTag = enum {
             grid,
             child,
         };
-        const Item = extern union {
-            // optional extern union of pointers is twice as big
-            ptr: ?*anyopaque,
-            grid: *Self,
-            child: *Data,
-        };
+        const Item = *anyopaque;
 
-        children: [Height][Width]Item,
+        children: [Height][Width]?*anyopaque,
         row: u32,
         col: u32,
         parent: ?*Self,
 
         pub fn initChild(parent: *Self, row: u32, col: u32) Self {
             return .{
-                .children = [_][Width]Item{[_]Item{.{ .ptr = null }} ** Width} ** Height,
+                .children = [_][Width]?*anyopaque{[_]?*anyopaque{null} ** Width} ** Height,
                 .row = row,
                 .col = col,
                 .parent = parent,
             };
         }
 
-        pub fn initParent(child: Item) Self {
+        pub fn initParent(child: *anyopaque) Self {
             var self = Self{
-                .children = [_][Width]Item{[_]Item{.{ .ptr = null }} ** Width} ** Height,
+                .children = [_][Width]?*anyopaque{[_]?*anyopaque{null} ** Width} ** Height,
                 .row = undefined,
                 .col = undefined,
                 .parent = null,
@@ -48,12 +51,12 @@ pub fn Grid(comptime Data: type) type {
 
         pub fn deinitChild(self: *Self, allocator: Allocator, level: usize) void {
             for (self.children) |children_row| {
-                for (children_row) |child| {
-                    if (child.ptr != null) {
+                for (children_row) |maybe_child| {
+                    if (maybe_child) |child| {
                         if (level > 0)
-                            child.grid.deinitChild(allocator, level - 1)
+                            ptrFromAny(Self, child).deinitChild(allocator, level - 1)
                         else
-                            allocator.destroy(child.child);
+                            allocator.destroy(ptrFromAny(Data, child));
                     }
                 }
             }
@@ -79,7 +82,7 @@ pub fn Grid(comptime Data: type) type {
                     return null;
 
                 const parent = try allocator.create(Self);
-                parent.* = initParent(.{ .grid = self });
+                parent.* = initParent(self);
 
                 self.parent = parent;
                 self.row = Height / 2;
@@ -98,43 +101,42 @@ pub fn Grid(comptime Data: type) type {
             const col = math.mod(parentX, Width);
 
             return if (create)
-                (try nextGen.atOrCreateItem(allocator, .grid, row, col)).grid
-            else if (nextGen.children[row][col].ptr != null)
-                nextGen.children[row][col].grid
+                try nextGen.atOrCreateItem(allocator, .grid, row, col)
             else
-                null;
+                ptrFromAnyOpt(Self, nextGen.children[row][col]);
         }
 
-        fn atOrCreateItem(self: *Self, allocator: Allocator, itemTag: ItemTag, row: usize, col: usize) Allocator.Error!Item {
-            if (self.children[row][col].ptr != null)
-                return self.children[row][col];
+        fn atOrCreateItem(self: *Self, allocator: Allocator, comptime itemTag: ItemTag, row: usize, col: usize) switch (itemTag) {
+            .child => Allocator.Error!*Data,
+            .grid => Allocator.Error!*Self,
+        } {
+            if (self.children[row][col]) |child| {
+                return @ptrCast(@alignCast(child));
+            }
 
-            const child = switch (itemTag) {
+            const child: *anyopaque = switch (itemTag) {
                 .grid => sw: {
-                    const child = Item{ .grid = try allocator.create(Self) };
-                    child.grid.* = initChild(self, @intCast(row), @intCast(col));
+                    const child = try allocator.create(Self);
+                    child.* = initChild(self, @intCast(row), @intCast(col));
                     break :sw child;
                 },
                 .child => sw: {
-                    const child = Item{ .child = try allocator.create(Data) };
-                    child.child.* = Data.init(self, @intCast(row), @intCast(col));
+                    const child = try allocator.create(Data);
+                    child.* = Data.init(self, @intCast(row), @intCast(col));
                     break :sw child;
                 },
             };
 
             self.children[row][col] = child;
-            return child;
+            return @ptrCast(@alignCast(child));
         }
 
         pub fn atOrCreate(self: *Self, allocator: Allocator, row: usize, col: usize) Allocator.Error!*Data {
-            return (try self.atOrCreateItem(allocator, .child, row, col)).child;
+            return try self.atOrCreateItem(allocator, .child, row, col);
         }
 
         pub fn at(self: *Self, row: usize, col: usize) ?*Data {
-            return if (self.children[row][col].ptr != null)
-                self.children[row][col].child
-            else
-                null;
+            return ptrFromAnyOpt(Data, self.children[row][col]);
         }
     };
 }
